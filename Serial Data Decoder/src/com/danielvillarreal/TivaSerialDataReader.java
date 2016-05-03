@@ -6,11 +6,11 @@ import gnu.io.SerialPort;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 
 import org.apache.commons.codec.binary.Hex;
 import org.jfree.data.time.Millisecond;
-import org.jfree.ui.RefineryUtilities;
 
 public class TivaSerialDataReader{
 
@@ -18,14 +18,16 @@ public class TivaSerialDataReader{
 	String port1 = "/dev/tty.HC-06-DevB";
 	String port2 = "/dev/tty.SLAB_USBtoUART";
 
+	private PrintWriter writer;
+
 	public TivaSerialDataReader(){
-		demo = new DynamicDataDemo("TIVA Demo");
-		//demo.pack();
-		//RefineryUtilities.centerFrameOnScreen(demo);
-		//demo.setVisible(true);
+
+
 
 		try{
+			writer = new PrintWriter("serialOutput.txt");
 			this.connect(port1);
+			System.out.println("Connected to port!");
 		}
 		catch ( Exception e ){
 			e.printStackTrace();
@@ -43,7 +45,7 @@ public class TivaSerialDataReader{
 
 			if (commPort instanceof SerialPort){
 				SerialPort serialPort = (SerialPort) commPort;
-				serialPort.setSerialPortParams(921600,SerialPort.DATABITS_8,SerialPort.STOPBITS_1,SerialPort.PARITY_NONE);
+				serialPort.setSerialPortParams(921600,SerialPort.DATABITS_8,SerialPort.STOPBITS_1,SerialPort.PARITY_ODD);
 
 
 
@@ -100,70 +102,17 @@ public class TivaSerialDataReader{
 		{
 			byte[] buffer = new byte[2];
 			int len = -1;
+			int count = 0;
 
 			try{
 
-				int nextChannel = 0;
-				boolean reConfigureId = true;
-				int idPosition = 0;
-				ArrayList<Sample> data;
-				int blockSize = 16;
-
-				while(in.available() > 0){
-
-					if(reConfigureId){
-						String idSample[] = new String[2];
-
-						boolean valid = false;
-						while(!valid){
-							idSample[0] = Hex.encodeHexString(readFromStream(this.in,2));
-							idSample[1] = Hex.encodeHexString(readFromStream(this.in,2));
-							
-							if(!((idSample[0].equals(idSample[1])))){
-								valid = true;
-							}
-						}
-
-						idPosition = findIdPosition(idSample[0],idSample[1]);
-
-						ArrayList<Sample>idFindSet = new ArrayList<Sample>();
-						idFindSet.add(rawStringToSample(idSample[0], idPosition));
-						idFindSet.add(rawStringToSample(idSample[1], idPosition));
-						addSetToChart(demo, idFindSet);
-
-
-						nextChannel  = extractId(idPosition,idSample[1]);
-						nextChannel++;
-					}
-					reConfigureId = false;
-					data = new ArrayList<Sample>();
-					for(int i = 0; i <= blockSize; i++){
-						Sample newSample = readNextSample(in,2,idPosition);
-						if(newSample.chId != nextChannel){
-							//Error in sequence
-							reConfigureId = true;
-							//Transfer available correct data
-							startBlockTranfer(data,blockSize);
-							break;
-						}else{
-							data.add(newSample);
-							nextChannel++;
-							checkBlockTransferReady(data,blockSize);
-							if(nextChannel > 16){
-								nextChannel = 0;
-							}
-						}
-					}
-
-
-				}
-
-
-				/*while(in.available() > 0){
+				while(in.available() >= 2){
 					byte temp[] = new byte[2];
 					in.read(temp);
-					System.out.println(Hex.encodeHexString(temp));
-				}*/
+					//System.out.println(Hex.encodeHexString(temp));
+					writer.println(Hex.encodeHexString(temp));
+					System.out.print("\r" + Integer.toString((count++)));
+				}
 
 			}catch ( IOException e ){
 				e.printStackTrace();
