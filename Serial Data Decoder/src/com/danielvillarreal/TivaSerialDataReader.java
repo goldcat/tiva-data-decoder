@@ -4,7 +4,7 @@ import gnu.io.CommPort;
 import gnu.io.CommPortIdentifier;
 import gnu.io.SerialPort;
 
-import java.io.FileWriter;
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
@@ -54,9 +54,10 @@ public class TivaSerialDataReader{
 
 
 				InputStream in = serialPort.getInputStream();
+				BufferedInputStream bis = new BufferedInputStream(in);
 
 
-				(new Thread(new SerialReader(in))).start();
+				(new Thread(new SerialReader(in,bis))).start();
 
 
 			}
@@ -97,9 +98,11 @@ public class TivaSerialDataReader{
 
 	public class SerialReader implements Runnable {
 		InputStream in;
+		BufferedInputStream bis;
 
-		public SerialReader ( InputStream in ){
+		public SerialReader ( InputStream in , BufferedInputStream bis){
 			this.in = in;
+			this.bis = bis;
 		}
 
 		public void run ()
@@ -114,7 +117,7 @@ public class TivaSerialDataReader{
 
 					while(in.available() > 2){
 						byte temp[] = new byte[2];
-						in.read(temp);
+						bis.read(temp);
 						
 						String newSample = Hex.encodeHexString(temp);
 						
@@ -124,9 +127,19 @@ public class TivaSerialDataReader{
 						System.out.println("New sample: " + newSample);
 						
 						if(extractId(2,newSample) != currentId){
+							
+							
+							bis.mark(3);
+							
 							//Error id mismatch
-							byte discard[] = new byte[1];
-							in.read(discard);
+							byte discard[] = new byte[2];
+							bis.read(discard);
+							
+							String checkSample = Hex.encodeHexString(discard);
+							if(extractId(2,checkSample) != (currentId+1)){
+								bis.reset();
+							}
+							
 							System.out.println("Discard: " + Hex.encodeHexString(discard));
 							String debug = ("error-" + currentId + " cse: " + countSinceError + " sample: " + newSample);
 							writer.println(debug);
