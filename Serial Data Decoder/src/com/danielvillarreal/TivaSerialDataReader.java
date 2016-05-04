@@ -5,9 +5,8 @@ import gnu.io.CommPortIdentifier;
 import gnu.io.SerialPort;
 
 import java.io.BufferedInputStream;
-import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 
@@ -16,40 +15,67 @@ import org.jfree.data.time.Millisecond;
 
 public class TivaSerialDataReader{
 
-	private DynamicDataDemo demo;
 	String port1 = "/dev/tty.HC-06-DevB";
 	String port2 = "/dev/tty.SLAB_USBtoUART";
-	PrintWriter writer;
-	PrintWriter full;
+
+	SerialPort serialPort;
+
+	private final int NUM_OF_SAMPLES = 500000;
+	Thread readerThread;
+	ArrayList<String> writeBuffer;
+
+	float startTime;
+	float endTime;
 
 	public TivaSerialDataReader(){
-		//demo = new DynamicDataDemo("TIVA Demo");
-		//demo.pack();
-		//RefineryUtilities.centerFrameOnScreen(demo);
-		//demo.setVisible(true);
-
-		try {
-			writer = new PrintWriter("errorDetectionOutput.txt");
-		} catch (FileNotFoundException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		}
-		Runtime.getRuntime().addShutdownHook(new Thread(new ShutdownSaver(writer)));
 		attempConnection(port1);
-	
+
 	}
-	
+
+	private void saveToFile(ArrayList<String> buff){
+		printTime();
+		System.out.println("Writing to file.");
+		try {
+			FileWriter writer = new FileWriter("output.txt");
+			for(String str: buff){
+				writer.write(str);
+			}
+			writer.flush();
+			writer.close();
+			printTime();
+		} catch (IOException e) {
+			e.printStackTrace();
+		} 
+
+
+	}
+
+	private void printTime(){
+		endTime = System.nanoTime();
+		System.out.println("Elapsed: " + (endTime-startTime)/(1000000000.0));
+	}
+
+	private void addToWriteBuffer(String s){
+		if(writeBuffer == null){
+			writeBuffer = new ArrayList<String>(NUM_OF_SAMPLES * 2);
+		}
+
+		writeBuffer.add(s+"\n");
+	}
+
 	void attempConnection(String port){
+		int time = 3000;
 		try {
 			this.connect(port);
 			System.out.println("Connected to port!");
 		} catch (Exception e) {
 			e.printStackTrace();
-			System.out.println("Retrying...");
-			attempConnection(port);
+			System.out.println("Error connecting");
+			System.exit(0);
+
 		}
-		
-		
+
+
 	}
 
 	void connect ( String portName ) throws Exception{
@@ -62,16 +88,15 @@ public class TivaSerialDataReader{
 
 
 			if (commPort instanceof SerialPort){
-				SerialPort serialPort = (SerialPort) commPort;
+				serialPort = (SerialPort) commPort;
 				serialPort.setSerialPortParams(921600,SerialPort.DATABITS_8,SerialPort.STOPBITS_1,SerialPort.PARITY_NONE);
 
 
+				BufferedInputStream bis = new BufferedInputStream(serialPort.getInputStream());
 
-				InputStream in = serialPort.getInputStream();
-				BufferedInputStream bis = new BufferedInputStream(in);
-
-
-				(new Thread(new SerialReader(in,bis))).start();
+				readerThread = (new Thread(new SerialReader(bis)));
+				startTime = System.nanoTime();
+				readerThread.start();
 
 
 			}
@@ -86,13 +111,12 @@ public class TivaSerialDataReader{
 		PrintWriter wr;
 
 		public ShutdownSaver(PrintWriter wr) {
-			// TODO Auto-generated constructor stub
+
 			this.wr = wr;
 		}
 
 		@Override
 		public void run() {
-			// TODO Auto-generated method stub
 			wr.close();
 			wr.flush();
 			System.out.println("closed file");
@@ -101,60 +125,32 @@ public class TivaSerialDataReader{
 
 	}
 
-	public class DataSetAdder implements Runnable{
-
-		ArrayList<Sample> toAdd;
-		DynamicDataDemo plot;
-
-		public DataSetAdder(ArrayList<Sample> data, DynamicDataDemo plot){
-			this.toAdd = data;
-			this.plot = plot;
-		}
-
-		@Override
-		public void run() {
-			int count = toAdd.size();
-			for(Sample s: toAdd){
-				Millisecond now = new Millisecond();
-				if(count-- == 1){
-					plot.addNewSample(s, now,true);
-				}else{
-					plot.addNewSample(s, now,false);
-				}
-
-			}
-			demo.updateChart();
-
-		}
-
-	}
 
 
 	public class SerialReader implements Runnable {
-		InputStream in;
 		BufferedInputStream bis;
 
-		public SerialReader ( InputStream in , BufferedInputStream bis){
-			this.in = in;
+		public SerialReader (BufferedInputStream bis){
 			this.bis = bis;
 		}
 
 		public void run ()
 		{
-			byte[] buffer = new byte[2];
-			int len = -1;
+			System.out.println("Srted run");
+
 			int currentId = -1;
 			int countSinceError = 0;
-			int errorCount = 0;
-			byte temp[];
-
+			float count = 0;
+			float errorCount = 0;
 
 			try{
 
 				while(!(bis.available() >= 2)){
 					//Wait until there is enough data
 				}
-				
+
+				System.out.println("Data is available!");
+
 				boolean initialError = true;
 
 				while(initialError){
@@ -167,85 +163,90 @@ public class TivaSerialDataReader{
 						bis.reset();
 						//Correct sequence by extracting two words
 						readFromStream(bis, 1);
-						writer.println("Sequnece off. Adjusted!");
+						addToWriteBuffer("Sequnece off. Adjusted!");
 					}else{
 						initialError = false;
 						bis.reset();
 					}
 				}
 
+				while(true){
+					if(bis.available() > 2){
 
-				while(in.available() > 2){
+						byte temp[] = new byte[2];
+						bis.read(temp);
+							
+						String newSample = Hex.encodeHexString(temp);
 
-					temp = new byte[2];
-					bis.read(temp);
-					String newSample = Hex.encodeHexString(temp);
-
-					if(currentId == -1){
-						currentId = extractId(2, newSample);
-					}
-					//System.out.println("New sample: " + newSample);
-
-					if(extractId(2,newSample) != currentId){
-
-
-						bis.mark(3);
-
-						//Error id mismatch
-						byte discard[] = new byte[2];
-						bis.read(discard);
-
-						String checkSample = Hex.encodeHexString(discard);
-						if(extractId(2,checkSample) != (currentId+1)){
-							bis.reset();
-							currentId--;
+						if(currentId == -1){
+							currentId = extractId(2, newSample);
 						}
 
-						//System.out.println("Discard: " + Hex.encodeHexString(discard));
-						String debug = ("error-" + currentId + " cse: " + countSinceError + " sample: " + newSample);
-						writer.println(debug);
-						//System.out.println(debug);
-						//in.skip(1);
-						//System.out.println("Error detected!");
-						//System.out.println("Err-Sample,currentId: " + newSample + " ," + currentId );
-						currentId += 2;
-						countSinceError = 0;
-						errorCount++;
-					}else{
-						//System.out.println("OK Smp: " + newSample);
-						writer.println(newSample);
-						currentId++;
-						countSinceError++;
-					}
+						if(extractId(2,newSample) != currentId){
+							String debug = "";
 
-					if(currentId > 15){
-						currentId = 0;
-					}
+							bis.mark(4);
 
-					//System.out.println(Hex.encodeHexString(temp));
+							//Error id mismatch
+							byte discard[] = new byte[2];
+							//Take 4 words out
+							bis.read(discard);
+
+							String checkSample = Hex.encodeHexString(discard);
+							
+							debug += ("error in id: " + currentId + " cse: " + countSinceError + " sample: " + newSample);
+							addToWriteBuffer(debug);
+							
+							if(extractId(2,checkSample) != (currentId+1)){
+								bis.reset();
+								readFromStream(bis, 1);
+								currentId+=2;
+								addToWriteBuffer("Not fix, reset(). Next id must be: " + currentId );
+							}else{
+								currentId += 2;
+							}
+
+							
+
+							errorCount++;
+							countSinceError = 0;
+						}else{
+							addToWriteBuffer(newSample);
+							currentId++;
+							countSinceError++;
+						}
+
+						if(currentId > 15){
+							currentId = 0;
+						}
+
+						count++;
+
+						if(count >= NUM_OF_SAMPLES){
+							System.out.println("Entered closing");
+							String err = ("Error rate: " + (errorCount/count)*100.0 + "%" + "\t error count: " + errorCount + "\t count: " + count);
+							addToWriteBuffer(err);
+							System.out.println(err);
+							saveToFile(writeBuffer);
+							serialPort.close();
+							System.exit(0);
+						}
+
+
+					}
+					
 				}
 
-			}catch ( IOException e ){
+
+			}catch ( Exception e){
 				e.printStackTrace();
 			}
 
 		}
+	}
 
-		private boolean detectError(String sample, int currentId){
-			return extractId(2,sample) != currentId;
-		}
-
-		private void checkBlockTransferReady(ArrayList<Sample> data,int blockSize) {
-			if(data.size() >= blockSize){
-				startBlockTranfer(data,blockSize);
-			}
-
-		}
-
-		private void startBlockTranfer(ArrayList<Sample> data,int blockSize){
-			//new Thread(new DataSetAdder(data, demo)).start();
-			(new DataSetAdder(data,demo)).run();
-		}
+	private boolean detectError(String sample, int currentId){
+		return extractId(2,sample) != currentId;
 	}
 
 	private void addSetToChart(DynamicDataDemo plot, ArrayList<Sample> data){
@@ -297,59 +298,6 @@ public class TivaSerialDataReader{
 
 		return Integer.parseInt(extractDataHex(idPosition,data),16);
 	}
-
-	private static int findIdPosition(String sampleOne, String sampleTwo){
-		byte temp[] = new byte[2];
-
-		char samplePosThree[] = new char[2];
-		char samplePosOne[] = new char[2];
-
-		samplePosThree[0] = sampleOne.charAt(0);
-		samplePosThree[1] = sampleTwo.charAt(0);
-
-		samplePosOne[0] = sampleOne.charAt(2);
-		samplePosOne[1] = sampleTwo.charAt(2);
-
-		//Check whether position three contains the id
-
-		boolean decision[] = new boolean[2];
-		int posThreeValue[] = new int[2];
-		int posOneValue[] = new int[2];
-
-		for(int i = 0; i < 2; i++){
-			posThreeValue[i] = Integer.parseInt(samplePosThree[i] + "",16);
-			posOneValue[i] = Integer.parseInt(samplePosOne[i] + "",16);
-
-		}
-		decision[0] = checkSequence(posThreeValue[0],posThreeValue[1]);
-		decision[1] = checkSequence(posOneValue[0],posOneValue[1]);
-
-		if(!(decision[0]|decision[1])){
-			System.out.println("DBG: SampleOne: " + sampleOne + " SampleTwo: " + sampleTwo);
-		}
-
-		if(decision[0]){
-			return 0;
-		}else if(decision[1]){
-			return 2;
-		}else return -1;
-
-	}
-
-	private static boolean checkSequence(int a, int b){
-
-		if(a == b){
-			return false;
-		}
-
-		if(a > b){
-			return true;
-		}else if(b > a){
-			return true;
-		}else return false;
-
-	}
-
 
 
 	public static void main ( String[] args){
