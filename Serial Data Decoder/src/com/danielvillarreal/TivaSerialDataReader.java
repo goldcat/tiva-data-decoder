@@ -28,10 +28,13 @@ public class TivaSerialDataReader{
 		//demo.setVisible(true);
 
 		try{
+			writer = new PrintWriter("errorDetectionOutput.txt");
+			Runtime.getRuntime().addShutdownHook(new Thread(new ShutdownSaver(writer)));
 			this.connect(port1);
 			System.out.println("Connected to port!");
-			writer = new PrintWriter("correctedOutput.txt");
-			full = new PrintWriter("fullOut.txt");
+			
+			
+			
 		}
 		catch ( Exception e ){
 			e.printStackTrace();
@@ -65,6 +68,26 @@ public class TivaSerialDataReader{
 				System.out.println("Error: Only serial ports are handled by this example.");
 			}
 		}     
+	}
+	
+	public class ShutdownSaver implements Runnable{
+
+		PrintWriter wr;
+		
+		public ShutdownSaver(PrintWriter wr) {
+			// TODO Auto-generated constructor stub
+			this.wr = wr;
+		}
+		
+		@Override
+		public void run() {
+			// TODO Auto-generated method stub
+			wr.close();
+			wr.flush();
+			System.out.println("closed file");
+			
+		}
+		
 	}
 
 	public class DataSetAdder implements Runnable{
@@ -112,6 +135,7 @@ public class TivaSerialDataReader{
 			int currentId = -1;
 			int countSinceError = 0;
 			int errorCount = 0;
+			
 
 			try{
 
@@ -124,7 +148,7 @@ public class TivaSerialDataReader{
 						if(currentId == -1){
 							currentId = extractId(2, newSample);
 						}
-						System.out.println("New sample: " + newSample);
+						//System.out.println("New sample: " + newSample);
 						
 						if(extractId(2,newSample) != currentId){
 							
@@ -138,12 +162,13 @@ public class TivaSerialDataReader{
 							String checkSample = Hex.encodeHexString(discard);
 							if(extractId(2,checkSample) != (currentId+1)){
 								bis.reset();
+								//currentId--;
 							}
 							
-							System.out.println("Discard: " + Hex.encodeHexString(discard));
+							//System.out.println("Discard: " + Hex.encodeHexString(discard));
 							String debug = ("error-" + currentId + " cse: " + countSinceError + " sample: " + newSample);
 							writer.println(debug);
-							System.out.println(debug);
+							//System.out.println(debug);
 							//in.skip(1);
 							//System.out.println("Error detected!");
 							//System.out.println("Err-Sample,currentId: " + newSample + " ," + currentId );
@@ -151,7 +176,7 @@ public class TivaSerialDataReader{
 							countSinceError = 0;
 							errorCount++;
 						}else{
-							System.out.println("OK Smp: " + newSample);
+							//System.out.println("OK Smp: " + newSample);
 							writer.println(newSample);
 							currentId++;
 							countSinceError++;
@@ -166,7 +191,8 @@ public class TivaSerialDataReader{
 
 				}catch ( IOException e ){
 					e.printStackTrace();
-				}            
+				}
+				
 			}
 
 			private void checkBlockTransferReady(ArrayList<Sample> data,int blockSize) {
