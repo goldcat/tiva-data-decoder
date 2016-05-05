@@ -20,12 +20,13 @@ public class TivaSerialDataReader{
 
 	SerialPort serialPort;
 
-	private final int NUM_OF_SAMPLES = 500000;
+	private final int NUM_OF_SAMPLES = 500;
 	Thread readerThread;
 	ArrayList<String> writeBuffer;
 
 	float startTime;
 	float endTime;
+
 
 	public TivaSerialDataReader(){
 		attempConnection(port1);
@@ -34,15 +35,15 @@ public class TivaSerialDataReader{
 
 	private void saveToFile(ArrayList<String> buff){
 		printTime();
-		System.out.println("Writing to file.");
+		//System.out.println("Writing to file.");
 		try {
-			FileWriter writer = new FileWriter("output.txt");
+			FileWriter writer = new FileWriter("graphOne.txt");
 			for(String str: buff){
 				writer.write(str);
 			}
 			writer.flush();
-			writer.close();
-			printTime();
+			//writer.close();
+			//printTime();
 		} catch (IOException e) {
 			e.printStackTrace();
 		} 
@@ -52,16 +53,25 @@ public class TivaSerialDataReader{
 
 	private void printTime(){
 		endTime = System.nanoTime();
-		System.out.println("Elapsed: " + (endTime-startTime)/(1000000000.0));
+		//System.out.println("Elapsed: " + (endTime-startTime)/(1000000000.0));
 	}
 
-	private void addToWriteBuffer(String s){
+	private void addToWriteBuffer(String str, int time){
 		if(writeBuffer == null){
-			writeBuffer = new ArrayList<String>(NUM_OF_SAMPLES * 2);
+			writeBuffer = new ArrayList<String>(NUM_OF_SAMPLES);
 		}
 
-		writeBuffer.add(s+"\n");
+		DataSample temp;
+		if((temp = DataSample.stringToDataSample(str,time)) != null){
+			if(temp.getId() == 0){
+				writeBuffer.add(temp.toGraphString(time) + "\n");
+			}
+		}
 	}
+
+
+
+
 
 	void attempConnection(String port){
 		int time = 3000;
@@ -143,6 +153,9 @@ public class TivaSerialDataReader{
 			float count = 0;
 			float errorCount = 0;
 
+			int time = 0;
+			int timeStep = 1;
+
 			try{
 
 				while(!(bis.available() >= 2)){
@@ -163,7 +176,7 @@ public class TivaSerialDataReader{
 						bis.reset();
 						//Correct sequence by extracting two words
 						readFromStream(bis, 1);
-						addToWriteBuffer("Sequnece off. Adjusted!");
+						//addToWriteBuffer("Sequnece off. Adjusted!");
 					}else{
 						initialError = false;
 						bis.reset();
@@ -175,7 +188,7 @@ public class TivaSerialDataReader{
 
 						byte temp[] = new byte[2];
 						bis.read(temp);
-							
+
 						String newSample = Hex.encodeHexString(temp);
 
 						if(currentId == -1){
@@ -193,48 +206,53 @@ public class TivaSerialDataReader{
 							bis.read(discard);
 
 							String checkSample = Hex.encodeHexString(discard);
-							
-							debug += ("error in id: " + currentId + " cse: " + countSinceError + " sample: " + newSample);
-							addToWriteBuffer(debug);
-							
+
+							//debug += ("error in id: " + currentId + " cse: " + countSinceError + " sample: " + newSample);
+							//addToWriteBuffer(debug);
+
 							if(extractId(2,checkSample) != (currentId+1)){
 								bis.reset();
 								readFromStream(bis, 1);
 								currentId+=2;
-								addToWriteBuffer("Not fix, reset(). Next id must be: " + currentId );
+								//addToWriteBuffer("Not fix, reset(). Next id must be: " + currentId );
 							}else{
 								currentId += 2;
 							}
 
-							
+
 
 							errorCount++;
 							countSinceError = 0;
 						}else{
-							addToWriteBuffer(newSample);
+							addToWriteBuffer(newSample,time);
 							currentId++;
 							countSinceError++;
 						}
 
 						if(currentId > 15){
 							currentId = 0;
+							time+= timeStep;
 						}
-
+						
+						if(time >= 10000){
+							time = 0;
+						}
+//						
+						
 						count++;
 
 						if(count >= NUM_OF_SAMPLES){
-							System.out.println("Entered closing");
+							//System.out.println("Entered closing");
 							String err = ("Error rate: " + (errorCount/count)*100.0 + "%" + "\t error count: " + errorCount + "\t count: " + count);
-							addToWriteBuffer(err);
-							System.out.println(err);
+							//System.out.println(err);
 							saveToFile(writeBuffer);
-							serialPort.close();
-							System.exit(0);
+							count = 0;
+
 						}
 
 
 					}
-					
+
 				}
 
 
